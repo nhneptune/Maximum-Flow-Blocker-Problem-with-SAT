@@ -1,0 +1,5 @@
+.venv/*
+*.min
+
+#ignore input folder
+input/*
