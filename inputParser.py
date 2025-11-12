@@ -6,6 +6,10 @@ import csv
 import os
 
 class InputParser:
+
+    PSEUDO_INF_BANDWIDTH = 50000000
+    PSEUDO_INF_COST = 1000000000
+
     def __init__(self, input_folder_path):
         self.input_folder_path = input_folder_path
         self.nodes = [] # list of node IDs
@@ -36,8 +40,6 @@ class InputParser:
         
         with open(link_file_path, 'r') as file:
             csv_reader = csv.DictReader(file)
-            # Skip header
-            next(csv_reader)
             
             for row in csv_reader:
                 link_id = int(row['LinkId'])
@@ -45,8 +47,15 @@ class InputParser:
                 head_value = int(row['srcIntfId'])
                 tail_node_id = int(row['dstNodeId'])
                 tail_value = int(row['dstIntfId'])
+
+                # Kiểm tra và thay thế giá trị giả vô cùng
                 capacity = int(row['bandwidth'])
+#                if capacity >= self.PSEUDO_INF_BANDWIDTH:
+ #                   capacity = 0
+                    
                 blocker_cost = int(row['cost'])
+   #             if blocker_cost >= self.PSEUDO_INF_COST:
+ #                   blocker_cost = 0
                 
                 self.links.append((head_node_id, tail_node_id))
                 self.capacities[(head_node_id, tail_node_id)] = capacity
@@ -90,5 +99,19 @@ class InputParser:
         print(f"Destination node: {self.destination}")
         print(f"Nodes: {self.nodes}")
         print("Links summary:")
-        for link in self.links:
-            print(f"  Link {link['link_id']}: {link['head_node_id']} -> {link['tail_node_id']} (capacity: {link['capacity']}, cost: {link['blocker_cost']})")
+        for idx, link in enumerate(self.links, start=1):
+            # support dicts (if links stored as dicts) or tuples/lists (head, tail)
+            if isinstance(link, dict):
+                link_id = link.get('link_id', idx)
+                head = link.get('head_node_id')
+                tail = link.get('tail_node_id')
+                capacity = link.get('capacity', self.capacities.get((head, tail)))
+                cost = link.get('blocker_cost', self.blocker_costs.get((head, tail)))
+            elif isinstance(link, (tuple, list)) and len(link) >= 2:
+                link_id = idx
+                head, tail = link[0], link[1]
+                capacity = self.capacities.get((head, tail))
+                cost = self.blocker_costs.get((head, tail))
+            else:
+                continue
+            print(f"  Link {link_id}: {head} -> {tail} (capacity: {capacity}, cost: {cost})")

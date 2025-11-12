@@ -3,10 +3,11 @@ from pysat.formula import CNF
 from pypblib import pblib
 from pypblib.pblib import PBConfig, AuxVarManager, VectorClauseDatabase, WeightedLit, PBConstraint, Pb2cnf
 from inputParser import InputParser
+from max_flow import calculate_max_flow
 
 class MFBPwithSAT:
     """Maximum Flow Blocker Problem solver using SAT encoding."""
-    
+
     def __init__(self):
         self.solver = Glucose3()
         self.cnf = CNF()
@@ -39,11 +40,15 @@ class MFBPwithSAT:
         for (head, tail) in self.links:
             var = self.allocate_variables(1)
             self.block_vars[(head, tail)] = var
+            if head == self.source or tail == self.destination:
+                self.cnf.append([-var])  # Force blocking variable to be fail (link cannot be blocked)
         
         # Minimum cut variables
         for (head, tail) in self.links:
             var = self.allocate_variables(1)
             self.mc_vars[(head, tail)] = var
+            if head == self.source or tail == self.destination:
+                self.cnf.append([-var])  # Force min cut variable to be fail (link cannot be in min cut)
         
         # Source side variables
         for node in self.nodes:
@@ -52,8 +57,8 @@ class MFBPwithSAT:
 
     def create_flow_conservation_constraints(self):
         #Create constraints: source_vars[source] = 1, source_vars[sink] = 0
-        self.cnf.append([self.source_vars[self.source]])  # source_vars[source] = 1
-        self.cnf.append([-self.source_vars[self.destination]])  # source_vars[sink]
+        self.cnf.append([-self.source_vars[self.source]])  # source_vars[source] = 1
+        self.cnf.append([self.source_vars[self.destination]])  # source_vars[sink]
         
         #create duality variable for each tail of each link
         for (head, tail) in self.links:
@@ -79,6 +84,8 @@ class MFBPwithSAT:
         weight_literals = []
         
         for (head, tail) in self.links:
+            if head == self.source or tail == self.destination:
+                continue  # Skip links with infinite capacity
             var = self.mc_vars[(head, tail)]
             capacity = self.capacities[(head, tail)]
             weight_literals.append(WeightedLit(var, capacity))
@@ -105,6 +112,8 @@ class MFBPwithSAT:
         weight_literals = []
         
         for (head, tail) in self.links:
+            if head == self.source or tail == self.destination:
+                continue  # Skip links with infinite blocker cost
             var = self.block_vars[(head, tail)]
             cost = self.blocker_costs[(head, tail)]
             weight_literals.append(WeightedLit(var, cost))
@@ -131,7 +140,8 @@ class MFBPwithSAT:
         
         #Calculate the possible range of budget
         c_min = 0
-        c_max = sum(self.blocker_costs.values())
+        c_max = sum(self.blocker_costs[(head, tail)] for (head, tail) in self.links if head != self.source and tail != self.destination)
+        c_mid = 0
 
         #Create variables and fixed constraints
         print("Creating variables and fixed constraints...")
@@ -141,6 +151,7 @@ class MFBPwithSAT:
         
         # Store the number of clauses after fixed constraints
         fixed_clause_count = len(self.cnf.clauses)
+
         
         while c_min < c_max:
             c_mid = (c_min + c_max) // 2
@@ -151,11 +162,19 @@ class MFBPwithSAT:
             self.solver.append_formula(self.cnf)
             
             if self.solver.solve():
-                print(f"Found solution for blocker cost: {c_mid}")
-                c_max = c_mid
                 self.solution = self.solver.get_model()
+                print(f"Found solution for trying value: {c_mid}")
+                blocked_links = [(head, tail) for (head, tail), var in self.block_vars.items() if var in self.solution]
+                print(f"Links to block: {blocked_links}")
+                blocker_cost = sum(self.blocker_costs[(head, tail)] for (head, tail) in blocked_links)
+                print(f"Blocker cost: {blocker_cost}")
+                print(f"Links in min cut: {[(head, tail) for (head, tail), var in self.mc_vars.items() if var in self.solution]}")
+                if blocker_cost == 0:
+                    c_min = c_mid + 1
+                else:
+                    c_max = c_mid
             else:
-                print(f"No solution for blocker cost: {c_mid}")
+                print(f"No solution for trying value: {c_mid}")
                 c_min = c_mid + 1
                 
             if (c_min < c_max):
@@ -164,10 +183,74 @@ class MFBPwithSAT:
                 self.solver = Glucose3()
                 
         if self.solution is not None:
-            print(f"Optimal blocker cost found: {c_max}")
             blocked_links = [(head, tail) for (head, tail), var in self.block_vars.items() if var in self.solution]
+            blocker_cost = sum(self.blocker_costs[(head, tail)] for (head, tail) in blocked_links)
+            print(f"Optimal blocker cost: {blocker_cost} with trying value: {c_max}")
             print(f"Links to block: {blocked_links}")
-            return blocked_links, c_max
+            print(f"Links in min cut: {[(head, tail) for (head, tail), var in self.mc_vars.items() if var in self.solution]}")
+            return blocked_links, blocker_cost
+        else:
+            print("No solution found within the given budget.")
+            return None
+        
+    def solve_with_linear_search(self):
+        """Solve the MFBP using linear search (not implemented)."""
+        print("Starting SAT solver...")
+        
+        #Set parameters
+        self.set_next_aux_var(1)  
+
+         #Calculate the possible range of budget
+        c_min = min(self.blocker_costs[(head, tail)] for (head, tail) in self.links if head != self.source and tail != self.destination)
+        c_max = sum(self.blocker_costs[(head, tail)] for (head, tail) in self.links if head != self.source and tail != self.destination)
+        c_optimal = 0
+
+         #Create variables and fixed constraints
+        print("Creating variables and fixed constraints...")
+        self.create_variables()
+        self.create_flow_conservation_constraints()
+        self.create_target_flow_constraint()
+        
+        # Store the number of clauses after fixed constraints
+        fixed_clause_count = len(self.cnf.clauses)
+
+        
+        for c_try in range (c_max, c_min - 1, -1):
+            print(f"Trying budget: {c_try}")
+            # Reset CNF to fixed clauses
+            self.cnf.clauses = self.cnf.clauses[:fixed_clause_count]
+            self.create_objective_constraint(c_try)
+            self.solver.append_formula(self.cnf)
+            
+            if self.solver.solve():
+                result = self.solver.get_model()
+                blocked_links = [(head, tail) for (head, tail), var in self.block_vars.items() if var in result]
+                blocker_cost = sum(self.blocker_costs[(head, tail)] for (head, tail) in blocked_links)
+                if blocker_cost == 0:
+                    print("Reached zero cost, stopping search.")
+                    break
+                self.solution = result
+                c_optimal = c_try
+                print(f"Found solution for trying value: {c_try}")
+                print(f"Links to block: {blocked_links}")
+                print(f"Blocker cost: {blocker_cost}")
+                print(f"Links in min cut: {[(head, tail) for (head, tail), var in self.mc_vars.items() if var in self.solution]}")
+                
+            else:
+                print(f"No solution for trying value: {c_try}")
+                break
+                
+            print("Resetting solver for next iteration...")
+            self.solver.delete()
+            self.solver = Glucose3()
+                
+        if self.solution is not None:
+            blocked_links = [(head, tail) for (head, tail), var in self.block_vars.items() if var in self.solution]
+            blocker_cost = sum(self.blocker_costs[(head, tail)] for (head, tail) in blocked_links)
+            print(f"Optimal blocker cost: {blocker_cost} with trying value: {c_optimal}")
+            print(f"Links to block: {blocked_links}")
+            print(f"Links in min cut: {[(head, tail) for (head, tail), var in self.mc_vars.items() if var in self.solution]}")
+            return None
         else:
             print("No solution found within the given budget.")
             return None
@@ -193,17 +276,21 @@ def solve_mfbp(folder_path):
     mfbp_solver.source = source
     mfbp_solver.destination = destination
         
+    #Calculate maximum flow to set target flow
+    max_flow_value, flow_dict = calculate_max_flow(folder_path)
+    print(f"Maximum flow in the original network: {max_flow_value}")
+
     # Set target flow (for example, 0 to completely block the flow)
-    mfbp_solver.target_flow = 0
+    mfbp_solver.target_flow = 19
         
     # Solve MFBP using binary search
-    blocked_links, optimal_cost = mfbp_solver.solve_with_binary_search()
+    mfbp_solver.solve_with_linear_search()
         
-    return blocked_links, optimal_cost
+    return None
 
 if __name__ == "__main__":
-    input_folder = "input/Example"  # Folder containing input data
-    blocked_links, optimal_cost = solve_mfbp(input_folder)
-    print(f"Blocked links: {blocked_links}")
-    print(f"Optimal blocker cost: {optimal_cost}")
+    #input_folder = "input/Example" 
+    input_folder = "input/RANDOM_20_0.4_3_0" 
+    solve_mfbp(input_folder)
+ 
         

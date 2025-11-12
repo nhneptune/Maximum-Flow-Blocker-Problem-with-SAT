@@ -3,3 +3,5 @@
 
 #ignore input folder
 input/*
+
+__pycache__/
