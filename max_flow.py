@@ -7,7 +7,7 @@ def calculate_max_flow(folder_path):
     # Parse input data
     parser = InputParser(folder_path)
     data = parser.parse_all()
-    parser.print_summary()
+    #parser.print_summary()
     
     # Create directed graph
     G = nx.DiGraph()
@@ -37,19 +37,19 @@ def calculate_max_flow(folder_path):
     )
     
     # Print results
-    print(f"\nMaximum flow value: {max_flow_value}")
-    print("\nFlow on each edge:")
-    for (head, tail) in data['links']:
-        flow = flow_dict[head][tail]
-        # In thêm thông tin về capacity của cạnh
-        capacity = data['capacities'][(head, tail)]
-        inf_mark = " (infinite)" if capacity >= INFINITE_CAPACITY else ""
-        print(f"Edge ({head}, {tail}): flow = {flow}, capacity = {capacity}{inf_mark}")
+    # print(f"\nMaximum flow value: {max_flow_value}")
+    # print("\nFlow on each edge:")
+    # for (head, tail) in data['links']:
+    #     flow = flow_dict[head][tail]
+    #     # In thêm thông tin về capacity của cạnh
+    #     capacity = data['capacities'][(head, tail)]
+    #     inf_mark = " (infinite)" if capacity >= INFINITE_CAPACITY else ""
+    #     print(f"Edge ({head}, {tail}): flow = {flow}, capacity = {capacity}{inf_mark}")
     
     return max_flow_value, flow_dict
 
 if __name__ == "__main__":
     # Test with example input
-    input_folder = "input/RANDOM_20_0.4_3_0"
+    input_folder = "input/RANDOM_20_0.2_3_4"
     #input_folder = "input/Example"
     max_flow_value, flow_dict = calculate_max_flow(input_folder)

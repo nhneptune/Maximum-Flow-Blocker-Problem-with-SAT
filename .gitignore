@@ -5,3 +5,21 @@
 input/*
 
 __pycache__/
+
+# ignore utilities file
+check_flow.py
+
+
+#ignore input folder
+input/*
+input_temp/*
+
+compare_methods.py
+mfbp_with_cplex.py
+mfbp_with_sat_old.py
+test_cplex.py
+
+*.xlsx
+*.csv
+
+
